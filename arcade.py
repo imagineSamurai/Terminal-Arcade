@@ -289,12 +289,200 @@ class Terminal:
 # SCOREBOARD PERSISTENCE
 # ============================================================================
 
-if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+if os.environ.get("ARCADE_EXECUTABLE"):
+    EXECUTABLE_PATH = os.path.abspath(os.environ["ARCADE_EXECUTABLE"])
+    BASE_DIR = os.path.dirname(EXECUTABLE_PATH)
+elif getattr(sys, "frozen", False):
+    EXECUTABLE_PATH = os.path.abspath(sys.executable)
+    BASE_DIR = os.path.dirname(EXECUTABLE_PATH)
 else:
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    EXECUTABLE_PATH = os.path.abspath(__file__)
+    BASE_DIR = os.path.dirname(EXECUTABLE_PATH)
 
 SCORE_FILE = os.path.join(BASE_DIR, "arcade_scores.json")
+if not os.access(BASE_DIR, os.W_OK) and not (os.path.exists(SCORE_FILE) and os.access(SCORE_FILE, os.W_OK)):
+    SCORE_FILE = os.path.expanduser("~/.arcade_scores.json")
+
+
+def is_in_path() -> bool:
+    """Check whether Terminal Arcade is already available in the user's PATH."""
+    if os.name == "nt":
+        target = os.path.normcase(os.path.normpath(BASE_DIR))
+        env_dirs = [
+            os.path.normcase(os.path.normpath(p.strip()))
+            for p in os.environ.get("PATH", "").split(";")
+            if p.strip()
+        ]
+        if target in env_dirs:
+            return True
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ) as key:
+                user_path, _ = winreg.QueryValueEx(key, "Path")
+                reg_dirs = [
+                    os.path.normcase(os.path.normpath(p.strip()))
+                    for p in user_path.split(";")
+                    if p.strip()
+                ]
+                if target in reg_dirs:
+                    return True
+        except Exception:
+            pass
+        return False
+    else:
+        target = os.path.normpath(BASE_DIR)
+        env_dirs = [os.path.normpath(p.strip()) for p in os.environ.get("PATH", "").split(":") if p.strip()]
+        if target in env_dirs:
+            return True
+        found = shutil.which("arcade")
+        if found and os.path.exists(found):
+            try:
+                if os.path.samefile(found, EXECUTABLE_PATH):
+                    return True
+            except Exception:
+                pass
+        return False
+
+
+def add_to_path() -> tuple[bool, str]:
+    """Add Terminal Arcade to the user's PATH on Windows or Linux/macOS."""
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE
+            ) as key:
+                try:
+                    current_path, reg_type = winreg.QueryValueEx(key, "Path")
+                except FileNotFoundError:
+                    current_path, reg_type = "", winreg.REG_EXPAND_SZ
+
+                parts = [p.strip() for p in current_path.split(";") if p.strip()]
+                norm_parts = [os.path.normcase(os.path.normpath(p)) for p in parts]
+                target_norm = os.path.normcase(os.path.normpath(BASE_DIR))
+
+                if target_norm not in norm_parts:
+                    parts.append(BASE_DIR)
+                    new_path = ";".join(parts)
+                    winreg.SetValueEx(key, "Path", 0, reg_type, new_path)
+
+            # Broadcast WM_SETTINGCHANGE so new terminals pick up the updated PATH immediately
+            try:
+                result = ctypes.c_ulong()
+                ctypes.windll.user32.SendMessageTimeoutW(
+                    0xFFFF, 0x001A, 0, "Environment", 0x0002, 5000, ctypes.byref(result)
+                )
+            except Exception:
+                pass
+
+            os.environ["PATH"] = BASE_DIR + ";" + os.environ.get("PATH", "")
+            return (
+                True,
+                f"Added '{BASE_DIR}' to your Windows User PATH.\n"
+                f"  You can now run 'arcade' (or 'arcade snake', 'arcade shmup', etc.) from any terminal!",
+            )
+        except Exception as exc:
+            return False, f"Failed to update Windows PATH: {exc}"
+    else:
+        try:
+            # Ensure the ELF binary / script has executable permissions
+            try:
+                st = os.stat(EXECUTABLE_PATH)
+                os.chmod(EXECUTABLE_PATH, st.st_mode | 0o111)
+            except Exception:
+                pass
+
+            # 1. Symlink into ~/.local/bin/arcade
+            local_bin = os.path.expanduser("~/.local/bin")
+            os.makedirs(local_bin, exist_ok=True)
+            link_path = os.path.join(local_bin, "arcade")
+            if os.path.abspath(EXECUTABLE_PATH) != os.path.abspath(link_path):
+                if os.path.lexists(link_path):
+                    os.remove(link_path)
+                os.symlink(EXECUTABLE_PATH, link_path)
+
+            # 2. Ensure BASE_DIR and ~/.local/bin are exported in user shell profiles
+            export_line = f'export PATH="$PATH:{BASE_DIR}:$HOME/.local/bin"'
+            rc_candidates = [
+                os.path.expanduser("~/.bashrc"),
+                os.path.expanduser("~/.zshrc"),
+                os.path.expanduser("~/.profile"),
+            ]
+            updated_files = []
+            existing_rcs = [p for p in rc_candidates if os.path.exists(p)]
+            if not existing_rcs:
+                existing_rcs = [os.path.expanduser("~/.bashrc"), os.path.expanduser("~/.profile")]
+
+            for rc_file in existing_rcs:
+                try:
+                    content = ""
+                    if os.path.exists(rc_file):
+                        with open(rc_file, "r", encoding="utf-8", errors="ignore") as f:
+                            content = f.read()
+                    if BASE_DIR not in content:
+                        with open(rc_file, "a", encoding="utf-8") as f:
+                            if content and not content.endswith("\n"):
+                                f.write("\n")
+                            f.write(f"\n# Terminal Arcade PATH\n{export_line}\n")
+                        updated_files.append(os.path.basename(rc_file))
+                except Exception:
+                    pass
+
+            os.environ["PATH"] = f"{BASE_DIR}:{local_bin}:" + os.environ.get("PATH", "")
+            rc_note = f" (updated {', '.join(updated_files)})" if updated_files else ""
+            return (
+                True,
+                f"Installed symlink '{link_path}' -> '{EXECUTABLE_PATH}'{rc_note}.\n"
+                f"  You can now run 'arcade' (or 'arcade snake', 'arcade shmup', etc.) from anywhere in the terminal!",
+            )
+        except Exception as exc:
+            return False, f"Failed to update Linux PATH: {exc}"
+
+
+def prompt_path_install(scores: dict, force: bool = False):
+    """Optionally ask the user whether they want to add Terminal Arcade to PATH."""
+    if not force:
+        if scores.get("path_prompt_done", False) or is_in_path():
+            return
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            return
+
+    platform_label = "Windows (arcade.exe)" if os.name == "nt" else "Linux (arcade ELF)"
+    print(f"\n{Style.FG_CYAN}╔════════════════════════════════════════════════════════════════════════╗{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}  {Style.FG_GOLD}{Style.BOLD}★  OPTIONAL INSTALLATION: ADD TERMINAL ARCADE TO PATH  ★{Style.RESET}              {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}╠════════════════════════════════════════════════════════════════════════╣{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}  Platform : {Style.FG_WHITE}{platform_label:<58}{Style.RESET} {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}  Location : {Style.FG_GRAY}{BASE_DIR[:58]:<58}{Style.RESET} {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}                                                                        {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}  Adding {Style.FG_GREEN}arcade{Style.RESET} to your PATH lets you launch it from anywhere in        {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}║{Style.RESET}  the terminal (e.g. {Style.FG_YELLOW}arcade{Style.RESET}, {Style.FG_YELLOW}arcade snake{Style.RESET}, {Style.FG_YELLOW}arcade shmup{Style.RESET}).               {Style.FG_CYAN}║{Style.RESET}")
+    print(f"{Style.FG_CYAN}╚════════════════════════════════════════════════════════════════════════╝{Style.RESET}")
+
+    try:
+        ans = input(f"{Style.FG_YELLOW}Would you like to add Terminal Arcade to your PATH? [y/N]: {Style.RESET}").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        ans = "n"
+
+    scores["path_prompt_done"] = True
+    save_scores(scores)
+
+    if ans in ("y", "yes"):
+        ok, msg = add_to_path()
+        color = Style.FG_GREEN if ok else Style.FG_RED
+        prefix = "✔" if ok else "✖"
+        print(f"\n  {color}{Style.BOLD}{prefix} {msg}{Style.RESET}\n")
+        if not force:
+            try:
+                input(f"  {Style.FG_GRAY}Press Enter to launch Terminal Arcade...{Style.RESET}")
+            except (EOFError, KeyboardInterrupt):
+                pass
+    else:
+        print(
+            f"\n  {Style.FG_GRAY}Skipped PATH setup. (Run 'arcade --install' anytime to add it later.){Style.RESET}\n"
+        )
+        if not force:
+            time.sleep(0.6)
 
 
 def load_scores() -> dict:
@@ -315,6 +503,7 @@ def load_scores() -> dict:
         "game_2048_high": 0,
         "c4_p1_wins": 0,
         "c4_p2_wins": 0,
+        "path_prompt_done": False,
     }
     if os.path.exists(SCORE_FILE):
         try:
@@ -3428,16 +3617,19 @@ class ArcadeHub:
 
 
 if __name__ == "__main__":
-    # Allow direct CLI shortcut: arcade.exe [snake | xo | pong | shmup | cyberwing | arena | bricks | 2048 | c4]
+    # Allow direct CLI shortcut: arcade [snake | xo | pong | shmup | cyberwing | arena | bricks | 2048 | c4 | --install]
     hub = ArcadeHub()
     if len(sys.argv) > 1:
         arg = sys.argv[1].lower().lstrip("-")
         if arg in ("h", "help", "?"):
             print("Retro Terminal Arcade TUI (9 Games)")
-            print("Usage: arcade [snake | xo | pong | shmup | cyberwing | arena | bricks | 2048 | c4]")
+            print("Usage: arcade [snake | xo | pong | shmup | cyberwing | arena | bricks | 2048 | c4 | --install]")
             sys.exit(0)
         if arg in ("v", "version"):
             print("Retro Terminal Arcade TUI v3.0.0")
+            sys.exit(0)
+        if arg in ("install", "add-path", "path", "setup"):
+            prompt_path_install(hub.scores, force=True)
             sys.exit(0)
         shortcut_map = {
             "snake": 0,
@@ -3464,6 +3656,7 @@ if __name__ == "__main__":
             "connect4": 8,
         }
         if arg in shortcut_map:
+            prompt_path_install(hub.scores, force=False)
             hub.term.enter_tui()
             try:
                 hub.games[shortcut_map[arg]]["runner"]()
@@ -3472,4 +3665,5 @@ if __name__ == "__main__":
             finally:
                 hub.term.exit_tui()
             sys.exit(0)
+    prompt_path_install(hub.scores, force=False)
     hub.run()
