@@ -20,11 +20,11 @@
 
 ⭐ If you like this project, star it on GitHub!
 
-[Features](#features) • [Games](#games) • [Quick Start](#quick-start) • [Controls](#controls) • [Building from Source](#building-from-source)
+[Features](#features) • [Games](#games) • [Quick Start](#quick-start) • [Adding to PATH](#adding-to-path) • [Controls](#controls) • [Building from Source](#building-from-source)
 
 </div>
 
-**Terminal Arcade** is a zero-dependency, retro-styled Terminal User Interface (TUI) gaming suite written in pure Python. It runs natively inside `cmd.exe`, PowerShell, Windows Terminal, and Unix shells, and includes a standalone **`arcade.exe`** executable so you can play immediately on Windows without installing Python.
+**Terminal Arcade** is a zero-dependency, retro-styled Terminal User Interface (TUI) gaming suite written in pure Python. It runs natively inside `cmd.exe`, PowerShell, Windows Terminal, and Unix shells, and includes standalone executables for both **Windows (`arcade.exe`)** and **Linux (`arcade` ELF)**.
 
 ## Features
 
@@ -59,6 +59,15 @@ No Python installation is required. Double-click **`arcade.exe`** in File Explor
 .\arcade.exe
 ```
 
+### Standalone ELF Executable (Linux `x86-64`)
+
+Run the prebuilt **`arcade`** ELF binary directly from your terminal:
+
+```bash
+chmod +x ./arcade
+./arcade
+```
+
 ### Python Script
 
 Requires Python 3.10 or newer:
@@ -70,9 +79,50 @@ python arcade.py
 > [!TIP]
 > On Windows CMD, you can also use the included `arcade.bat` wrapper to launch the menu or pass a game shortcut directly (e.g., `arcade shmup`).
 
+## Adding to PATH
+
+On your first launch, **Terminal Arcade** asks whether you want to add `arcade` to your system `PATH` so you can run it from any folder in your terminal.
+
+### Installing to PATH After Rejecting / Skipping
+
+If you chose **`N`** (rejected or skipped the prompt on first launch) and want to add `arcade` to your `PATH` later, you can trigger the installer at any time using the `--install` flag or the included installer scripts:
+
+#### Windows (CMD / PowerShell)
+
+```cmd
+.\arcade.exe --install
+```
+
+Or double-click / run the batch installer:
+
+```cmd
+.\install.bat
+```
+
+#### Linux / macOS
+
+```bash
+./arcade --install
+```
+
+Or run the shell installer script:
+
+```bash
+./install.sh
+```
+
+#### Python Script (Any Platform)
+
+```bash
+python arcade.py --install
+```
+
+> [!TIP]
+> You can also reset the first-run prompt manually by setting `"path_prompt_done": false` inside `arcade_scores.json`.
+
 ### Direct CLI Shortcuts
 
-Pass a game name as an argument to bypass the main menu and jump straight into a game:
+Once added to `PATH`, pass a game name as an argument from anywhere in the terminal to jump straight into a game:
 
 ```bash
 arcade snake       # 1. Snake Arcade
