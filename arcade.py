@@ -348,6 +348,14 @@ def add_to_path() -> tuple[bool, str]:
     """Add Terminal Arcade to the user's PATH on Windows or Linux/macOS."""
     if os.name == "nt":
         try:
+            # If the release binary is named e.g. terminal-arcade_3.0.0_x64.exe,
+            # ensure an arcade.bat wrapper exists next to it so `arcade` works in CMD/PowerShell.
+            exe_name = os.path.basename(EXECUTABLE_PATH)
+            if exe_name.lower() not in ("arcade.exe", "arcade.py"):
+                bat_shim = os.path.join(BASE_DIR, "arcade.bat")
+                with open(bat_shim, "w", encoding="utf-8") as bf:
+                    bf.write(f'@echo off\n"%~dp0{exe_name}" %*\n')
+
             import winreg
             with winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE
