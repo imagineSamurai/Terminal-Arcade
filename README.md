@@ -68,6 +68,15 @@ chmod +x ./arcade
 ./arcade
 ```
 
+### Debian / Ubuntu Package (`.deb`)
+
+Install system-wide to `/usr/bin/arcade` using the included `.deb` package:
+
+```bash
+sudo dpkg -i terminal-arcade_3.0.0_amd64.deb
+arcade
+```
+
 ### Python Script
 
 Requires Python 3.10 or newer:
