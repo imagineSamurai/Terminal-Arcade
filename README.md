@@ -14,7 +14,7 @@
 *Retro 9-in-1 mini-games cabinet for Windows CMD, PowerShell, and Terminal*
 
 [![Python](https://img.shields.io/badge/Python->=3.10-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-0078d4?style=flat-square)](https://github.com/imagineSamurai/Terminal-Arcade)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square)](https://github.com/imagineSamurai/Terminal-Arcade)
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero-2ea44f?style=flat-square)](https://github.com/imagineSamurai/Terminal-Arcade)
 [![Games](https://img.shields.io/badge/Games-9%20Included-f39c12?style=flat-square)](#games)
 
